@@ -59,6 +59,7 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  celluloid-io
   celluloid-redis
   cinch
   mysql2

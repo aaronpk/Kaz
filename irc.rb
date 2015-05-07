@@ -16,7 +16,8 @@ class SubscriptionReactor
   include Celluloid::IO
 
   def initialize
-    @redis = Redis.new(:driver => :celluloid)
+    puts "SubscriptionReactor::initialize"
+    @redis = ::Redis.new(:driver => :celluloid)
     @subscribed = false
   end
 
@@ -53,71 +54,76 @@ class SubscriptionReactor
 
 end
 
-sub = SubscriptionReactor.new
 
 
-def start_irc
+class IrcBot
 
-  bot = Cinch::Bot.new do
-    configure do |c|
-      c.nick = AppConfig['irc']['nick']
-      c.user = AppConfig['irc']['nick']
-      c.server = AppConfig['irc']['server']
-      c.channels = AppConfig['irc']['channels']
+  class << self
+    def subscription
+      @sub ||= SubscriptionReactor.new
     end
+  end
 
-    on :connect do
-      sub.async.redis_subscribe unless sub.subscribed?
-    end
+  def start
 
-    on :message, /^#{my_nick}: ([^ ]+) is ([^ ]+)$/i do |m, ident, nick|
-      if nick == 'me'
-        nick = m.user.nick
+    bot = Cinch::Bot.new do
+      configure do |c|
+        c.nick = AppConfig['irc']['nick']
+        c.user = AppConfig['irc']['nick']
+        c.server = AppConfig['irc']['server']
+        c.channels = AppConfig['irc']['channels']
       end
 
-      server = DB[:ircservers].where(:id => AppConfig['irc']['server_id']).first
-      caller = DB[:callers]
-        .join(:rooms, :id => :room_id)
-        .where(:ircserver_id => server[:id])
-        .where(:ident => ident).first
-      if caller
-        DB[:callers]
-          .where(:id => caller[:id])
-          .update(:nickname => nick, :date_nick_set => DateTime.now)
-        m.reply "Okay, #{nick} is on #{ident}"
-      else
-        m.reply "Sorry, I don't see #{ident}"
+      on :connect do
+        IrcBot.subscription.async.redis_subscribe unless IrcBot.subscription.subscribed?
       end
-    end
 
-    on :message, /^#{my_nick}: who is on the call\??$/i do |m, ident, nick|
+      on :message, /^#{my_nick}: ([^ ]+) is ([^ ]+)$/i do |m, ident, nick|
+        if nick == 'me'
+          nick = m.user.nick
+        end
 
-      room = DB[:rooms]
-        .where(:ircserver_id => AppConfig['irc']['server_id'])
-        .where(:irc_channel => m.channel.name)
-        .first
-
-      if room
-        m.reply "I'll check for you"
-        conferences = TwilioClient.account.conferences.list(
-          :FriendlyName => room[:dial_code],
-          :Status => 'in-progress'
-        )
-        puts conferences.inspect
-      else
-        m.reply "Sorry, I don't see a conference code configured for this IRC channel"
+        server = DB[:ircservers].where(:id => AppConfig['irc']['server_id']).first
+        caller = DB[:callers]
+          .join(:rooms, :id => :room_id)
+          .where(:ircserver_id => server[:id])
+          .where(:ident => ident).first
+        if caller
+          DB[:callers]
+            .where(:id => caller[:id])
+            .update(:nickname => nick, :date_nick_set => DateTime.now)
+          m.reply "Okay, #{nick} is on #{ident}"
+        else
+          m.reply "Sorry, I don't see #{ident}"
+        end
       end
+
+      on :message, /^#{my_nick}: who is on the call\??$/i do |m, ident, nick|
+
+        room = DB[:rooms]
+          .where(:ircserver_id => AppConfig['irc']['server_id'])
+          .where(:irc_channel => m.channel.name)
+          .first
+
+        if room
+          m.reply "I'll check for you"
+          conferences = TwilioClient.account.conferences.list(
+            :FriendlyName => room[:dial_code],
+            :Status => 'in-progress'
+          )
+          puts conferences.inspect
+        else
+          m.reply "Sorry, I don't see a conference code configured for this IRC channel"
+        end
+      end
+
     end
+    bot.start
 
   end
-  bot.start
-
 end
 
 
-
-
-
-start_irc
-
+bot = IrcBot.new
+bot.start
 
