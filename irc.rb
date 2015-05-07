@@ -12,35 +12,48 @@ def my_nick
 end
 
 
+class SubscriptionReactor
+  include Celluloid::IO
 
+  def initialize
+    @redis = Redis.new(:driver => :celluloid)
+    @subscribed = false
+  end
 
-def redis_subscribe
+  def subscribed?; @subscribed; end
 
-  redis = Redis.new(:driver => :celluloid)
+  def redis_subscribe
+    @subscribed = true
+    @redis.subscribe(:cass_irc) do |on|
+      on.subscribe do |channel, subscriptions|
+        puts "Subscribed to ##{channel} (#{subscriptions} subscriptions)"
+      end
 
-  redis.subscribe(:cass_irc) do |on|
-    on.subscribe do |channel, subscriptions|
-      puts "Subscribed to ##{channel} (#{subscriptions} subscriptions)"
-    end
-
-    on.message do |channel, msg_string|
-      puts "##{channel}: #{msg_string}"
-      message = JSON.parse msg_string
-      server = DB[:ircservers].where(:id => message['server']).first
-      room = DB[:rooms].where(:id => message['room']).first
-      if room
-        if message['text']
-          Channel(room[:irc_channel]).send(message['text'])
-        elsif message['action']
-          Channel(room[:irc_channel]).action(message['action'])
+      on.message do |channel, msg_string|
+        puts "##{channel}: #{msg_string}"
+        message = JSON.parse msg_string
+        server = DB[:ircservers].where(:id => message['server']).first
+        room = DB[:rooms].where(:id => message['room']).first
+        if room
+          if message['text']
+            Channel(room[:irc_channel]).send(message['text'])
+          elsif message['action']
+            Channel(room[:irc_channel]).action(message['action'])
+          end
+        else
+          puts "Message arrived for an invalid room: #{message['room']}"
         end
-      else
-        puts "Message arrived for an invalid room: #{message['room']}"
       end
     end
+  rescue => e
+    puts e.message
+  ensure
+    @subscribed = false
   end
 
 end
+
+sub = SubscriptionReactor.new
 
 
 def start_irc
@@ -54,7 +67,7 @@ def start_irc
     end
 
     on :connect do
-      redis_subscribe
+      sub.async.redis_subscribe unless sub.subscribed?
     end
 
     on :message, /^#{my_nick}: ([^ ]+) is ([^ ]+)$/i do |m, ident, nick|
