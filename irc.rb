@@ -12,8 +12,8 @@ def my_nick
 end
 
 
-class SubscriptionActor
-  include Celluloid
+class SubscriptionReactor
+  include Celluloid::IO
 
   def initialize
     @redis = Redis.new(:driver => :celluloid)
@@ -53,7 +53,7 @@ class SubscriptionActor
 
 end
 
-subact = SubscriptionActor.new
+sub = SubscriptionReactor.new
 
 
 def start_irc
@@ -67,7 +67,7 @@ def start_irc
     end
 
     on :connect do
-      subact.async.redis_subscribe unless subact.subscribed?
+      sub.async.redis_subscribe unless sub.subscribed?
     end
 
     on :message, /^#{my_nick}: ([^ ]+) is ([^ ]+)$/i do |m, ident, nick|
