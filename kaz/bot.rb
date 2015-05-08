@@ -7,7 +7,8 @@ require 'json'
 class NilClass; alias_method :empty?, :nil?; end
 
 PLUGINS = [
-  {:file => 'ping', :class => 'Ping'}
+  {:file => 'ping', :class => 'Ping'},
+  {:file => 'conference', :class => 'Conference'},
 ]
 
 module Bot
