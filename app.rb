@@ -2,21 +2,30 @@ require 'rubygems'
 require 'bundler/setup'
 Bundler.require
 require 'yaml'
+require 'json'
 
-AppConfig = YAML.load_file('config.yml')
-DB = Sequel.connect(AppConfig['db'])
-REDIS = Redis.new
-TwilioClient = Twilio::REST::Client.new AppConfig['twilio']['sid'], AppConfig['twilio']['token']
+CONFIG_FILE = File.expand_path '../config.yml', __FILE__
+begin
+  CONFIG = YAML.load_file CONFIG_FILE
+rescue => e
+  STDERR.puts "unable to read: #{CONFIG_FILE}"
+  STDERR.puts e
+  exit 1
+end
+
+REDIS = ::Redis::Namespace.new CONFIG[:irc][:nick], redis: ::Redis.new(:driver => :celluloid)
+DB = Sequel.connect(CONFIG[:db])
+TwilioClient = Twilio::REST::Client.new CONFIG[:twilio][:sid], CONFIG[:twilio][:token]
 
 class App < Sinatra::Base
 
   class Config
     def self.receive_url
-      AppConfig['base_url'] + "/call/digits"
+      CONFIG[:base_url] + "/call/digits"
     end
 
     def self.conference_callback_url
-      AppConfig['base_url'] + "/call/callback"
+      CONFIG[:base_url] + "/call/callback"
     end
   end
 
@@ -58,7 +67,7 @@ class App < Sinatra::Base
 
       # Send a message to IRC that the caller joined
       message = "+#{ident}"
-      REDIS.publish 'cass_irc', {:server => server[:id], :room => room[:id], :text => message}.to_json
+      REDIS.publish 'input', {:type => 'text', :channel => room[:irc_channel], :text => message}.to_json
 
       xml = Twilio::TwiML::Response.new do |r|
         r.Dial({
@@ -90,7 +99,11 @@ class App < Sinatra::Base
   end
 
   get '/' do
-    'Hello world, I am Cass, your friendly telcon robot!'
+    'Hello world, I am Kaz, your friendly telcon robot!'
+  end
+
+  post '/irc' do
+    REDIS.publish 'input', params.to_json
   end
 
   post '/call/incoming' do
@@ -100,7 +113,6 @@ class App < Sinatra::Base
     if params[:To] == ''
       called_id = params[:ApplicationSid]
       type = 'browser'
-      puts "WHAT IS GOING ON"
       return join_conference params[:CallSid], 'browser', called_id, params[:code]
     else
       called_id = params[:To]
@@ -108,7 +120,7 @@ class App < Sinatra::Base
     end
 
     Twilio::TwiML::Response.new do |r|
-      r.Say 'This is Cass, your friendly telcon robot.'
+      r.Say 'This is Kaz, your friendly telcon robot.'
       r.Gather :numDigits => 4, :action => Config.receive_url+'?called_id='+called_id+'&type='+type, :method => 'post' do |g|
         g.Say 'Please enter your four digit conference code.'
       end
@@ -131,11 +143,16 @@ class App < Sinatra::Base
           .where(:room_id => room[:id])
           .where(:caller_id => caller_id)
 
-        ident = caller.first[:ident]
+        call = caller.first
+        if call[:nickname]
+          ident = call[:nickname]
+        else
+          ident = call[:ident]
+        end
         caller.delete
 
         message = "-#{ident}"
-        REDIS.publish 'cass_irc', {:server => server[:id], :room => room[:id], :text => message}.to_json
+        REDIS.publish 'input', {:type => 'text', :channel => room[:irc_channel], :text => message}.to_json
       end
     end
 

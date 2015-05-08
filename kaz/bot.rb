@@ -11,10 +11,17 @@ PLUGINS = [
   {:file => 'conference', :class => 'Conference'},
 ]
 
-module Bot
+# Load the config file
+require File.expand_path "../lib/config", __FILE__
 
-  # Load the config file
-  require File.expand_path "../lib/config", __FILE__
+TwilioClient = Twilio::REST::Client.new CONFIG[:twilio][:sid], CONFIG[:twilio][:token]
+
+# Need to make a new connection per thread, so provide an easy method to use
+def db_connect
+  Sequel.connect(CONFIG[:db])
+end  
+
+module Bot
 
   # Load the plugins
   PLUGINS.each do |p|
