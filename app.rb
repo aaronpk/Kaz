@@ -17,6 +17,8 @@ REDIS = ::Redis::Namespace.new CONFIG[:irc][:nick], redis: ::Redis.new(:driver =
 DB = Sequel.connect(CONFIG[:db])
 TwilioClient = Twilio::REST::Client.new CONFIG[:twilio][:sid], CONFIG[:twilio][:token]
 
+require File.expand_path "../lib/aliases", __FILE__
+
 class App < Sinatra::Base
 
   class Config
@@ -43,9 +45,27 @@ class App < Sinatra::Base
     if room
       server = DB[:ircservers].where(:id => room[:ircserver_id]).first
 
-      # TODO: if type=phone look up the caller ID in the nick cache
+      # if type=phone, generate a random 4-char suffix, show that plus the rest of the number as the display name
+      if type == 'phone'
+        # Find the number of callers already on the call
+        num_callers = DB[:callers]
+         .where(:room_id => room[:id])
+         .count
+        # Get an alias for this newest caller
+        ident = Alias::generate num_callers+1
 
-      ident = caller_id[-4..-1]
+        trunc_caller_id = caller_id[0..-5]
+
+        # If the truncated caller ID matches a US phone number, add dots
+        if m=trunc_caller_id.match(/^1(\d{3})(\d{3})/ )
+          trunc_caller_id = "1.#{m[1]}.#{m[2]}."
+        end
+        display_name = trunc_caller_id + ident
+        
+      else
+        ident = caller_id[-4..-1]
+        display_name = ident
+      end
 
       # Log the participant in the room
       caller = DB[:callers]
@@ -57,17 +77,35 @@ class App < Sinatra::Base
           .where(:id => caller[:id])
           .update(:date_joined => DateTime.now, :ident => ident)
       else
-        DB[:callers] << {
+        cid = DB[:callers].insert({
           :room_id => room[:id],
           :caller_id => caller_id,
           :ident => ident,
           :date_joined => DateTime.now
-        }
+        })
+        caller = DB[:callers].where(:id => cid).first
+      end
+
+      # if type=phone or sip, look up the caller ID in the nick cache
+      if type == 'phone' # or sip
+        remembered = DB[:remember_me]
+          .where(:caller_id => caller[:caller_id])
+          .first
+        if remembered
+          display_name = remembered[:nick]
+          DB[:callers]
+            .where(:id => caller[:id])
+            .update(:nick => remembered[:nick])
+        end
       end
 
       # Send a message to IRC that the caller joined
-      message = "+#{ident}"
+      message = "+#{display_name}"
       REDIS.publish 'input', {:type => 'text', :channel => room[:irc_channel], :text => message}.to_json
+      # If the caller corresponds to an IRC user, give them voice
+      if caller[:nick]
+        REDIS.publish 'input', {:type => 'voice', :channel => room[:irc_channel], :nick => caller[:nick]}.to_json
+      end
 
       xml = Twilio::TwiML::Response.new do |r|
         r.Dial({
@@ -85,7 +123,7 @@ class App < Sinatra::Base
       xml
     else
       Twilio::TwiML::Response.new do |r|
-        r.say 'Sorry, that is not a valid room'
+        r.say 'Sorry, that is not a valid code'
       end.text
     end
   end
@@ -115,20 +153,21 @@ class App < Sinatra::Base
       type = 'browser'
       return join_conference params[:CallSid], 'browser', called_id, params[:code]
     else
+      # TODO: SIP!
       called_id = params[:To]
       type = 'phone'
     end
 
     Twilio::TwiML::Response.new do |r|
       r.Say 'This is Kaz, your friendly telcon robot.'
-      r.Gather :numDigits => 4, :action => Config.receive_url+'?called_id='+called_id+'&type='+type, :method => 'post' do |g|
+      r.Gather :numDigits => 4, :action => Config.receive_url+'?To='+called_id+'&type='+type, :method => 'post' do |g|
         g.Say 'Please enter your four digit conference code.'
       end
     end.text
   end
 
   post '/call/digits' do
-    join_conference params[:From], params[:type], params[:called_id], params[:Digits]
+    join_conference params[:From], params[:type], params[:To], params[:Digits]
   end
 
   post '/call/callback' do
@@ -143,16 +182,27 @@ class App < Sinatra::Base
           .where(:room_id => room[:id])
           .where(:caller_id => caller_id)
 
-        call = caller.first
-        if call[:nickname]
-          ident = call[:nickname]
+        record = caller.first
+        if !record
+          puts "Caller disconnected but wasn't already on the call"
+          puts "#{room[:id]} #{caller_id}"
+          return
+        end
+
+        if record[:nick]
+          display_name = record[:nick]
         else
-          ident = call[:ident]
+          display_name = record[:ident]
         end
         caller.delete
 
-        message = "-#{ident}"
+        message = "-#{display_name}"
         REDIS.publish 'input', {:type => 'text', :channel => room[:irc_channel], :text => message}.to_json
+
+        # If the caller is on IRC, devoice them as well
+        if record[:nick]
+          REDIS.publish 'input', {:type => 'devoice', :channel => room[:irc_channel], :nick => record[:nick]}.to_json
+        end
       end
     end
 
