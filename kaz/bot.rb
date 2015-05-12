@@ -9,7 +9,8 @@ class NilClass; alias_method :empty?, :nil?; end
 PLUGINS = [
   {:file => 'ping', :class => 'Ping'},
   {:file => 'conference', :class => 'Conference'},
-  {:file => 'speakerqueue', :class => 'SpeakerQUeue'},
+  {:file => 'speakerqueue', :class => 'SpeakerQueue'},
+  {:file => 'join_on_invite', :class => 'JoinOnInvite'},
 ]
 
 # Load the config file
