@@ -31,14 +31,14 @@ class App < Sinatra::Base
     end
   end
 
-  def join_conference(caller_id, type, called_id, code)
+  def join_conference(call_sid, caller_id, type, gateway, code)
     # Look up conference code to find the IRC room
     room = DB[:rooms]
       .select_all(:rooms)
       .join(:ircservers, :id => :ircserver_id)
       .join(:gateways, :ircserver_id => :ircservers__id)
       .where(:gateways__type => type)
-      .where(:gateways__value => called_id)
+      .where(:gateways__value => gateway)
       .where(:dial_code => code)
       .first
 
@@ -61,7 +61,7 @@ class App < Sinatra::Base
           trunc_caller_id = "1.#{m[1]}.#{m[2]}."
         end
         display_name = trunc_caller_id + ident
-        
+
       else
         ident = caller_id[-4..-1]
         display_name = ident
@@ -69,18 +69,19 @@ class App < Sinatra::Base
 
       # Log the participant in the room
       caller = DB[:callers]
-        .where(:room_id => room[:id])
-        .where(:caller_id => caller_id)
-        .first
+                .where(:room_id => room[:id])
+                .where(:caller_id => caller_id)
+                .first
       if caller
         DB[:callers]
           .where(:id => caller[:id])
-          .update(:date_joined => DateTime.now, :ident => ident)
+          .update(:date_joined => DateTime.now, :ident => ident, :call_sid => call_sid)
       else
         cid = DB[:callers].insert({
           :room_id => room[:id],
           :caller_id => caller_id,
           :ident => ident,
+          :call_sid => call_sid,
           :date_joined => DateTime.now
         })
         caller = DB[:callers].where(:id => cid).first
@@ -89,8 +90,8 @@ class App < Sinatra::Base
       # if type=phone or sip, look up the caller ID in the nick cache
       if type == 'phone' # or sip
         remembered = DB[:remember_me]
-          .where(:caller_id => caller[:caller_id])
-          .first
+                      .where(:caller_id => caller[:caller_id])
+                      .first
         if remembered
           display_name = remembered[:nick]
           DB[:callers]
@@ -140,6 +141,10 @@ class App < Sinatra::Base
     'Hello world, I am Kaz, your friendly telcon robot!'
   end
 
+  get '/call' do
+    erb :call
+  end
+
   post '/irc' do
     REDIS.publish 'input', params.to_json
   end
@@ -149,25 +154,23 @@ class App < Sinatra::Base
 
     # if To is blank, it was from a browser phone
     if params[:To] == ''
-      called_id = params[:ApplicationSid]
-      type = 'browser'
-      return join_conference params[:CallSid], 'browser', called_id, params[:code]
+      return join_conference params[:CallSid], params[:CallSid], 'browser', params[:ApplicationSid], params[:code]
     else
       # TODO: SIP!
-      called_id = params[:To]
+      gateway = params[:To]
       type = 'phone'
     end
 
     Twilio::TwiML::Response.new do |r|
       r.Say 'This is Kaz, your friendly telcon robot.'
-      r.Gather :numDigits => 4, :action => Config.receive_url+'?To='+called_id+'&type='+type, :method => 'post' do |g|
+      r.Gather :numDigits => 4, :action => Config.receive_url+'?To='+gateway+'&type='+type, :method => 'post' do |g|
         g.Say 'Please enter your four digit conference code.'
       end
     end.text
   end
 
   post '/call/digits' do
-    join_conference params[:From], params[:type], params[:To], params[:Digits]
+    join_conference params[:CallSid], params[:From], params[:type], params[:To], params[:Digits]
   end
 
   post '/call/callback' do

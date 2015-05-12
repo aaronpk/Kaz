@@ -1,5 +1,5 @@
-Cassie the telcon robot
-=======================
+Kaz the Telcon Robot
+====================
 
 
 Web Interface
@@ -14,7 +14,7 @@ IRC Bot
 -------
 
 ```bash
-$ bundle exec ruby irc.rb
+$ bundle exec ruby kaz/bot.rb
 ```
 
 
