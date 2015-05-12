@@ -6,7 +6,7 @@ module Bot
     listen_to :channel
 
     def listen(m)
-      m.message.match /^(who( is|'s) on (the )?)?q(ueue)?\?$/i do
+      m.message.match /^(who( is|'s|s) on (the )?)?q(ueue)?\?$/i do
         self.showQueue(m)
       end
 
@@ -61,10 +61,10 @@ module Bot
       nick = m.user.nick if nick.nil? or nick.empty?
       nick = m.user.nick if nick == 'me'
       if $queue[m.channel].keys.member? nick then
-          m.action_reply "already sees #{nick} on the speaker queue"
+        m.action_reply "already sees #{nick} on the speaker queue"
       else 
-          $queue[m.channel][nick] = topic
-          self.showQueue(m)
+        $queue[m.channel][nick] = topic
+        self.showQueue(m)
       end
     end
 
@@ -73,25 +73,25 @@ module Bot
       nick = m.user.nick if nick.nil? or nick.empty?
       nick = m.user.nick if nick == 'me'
       if $queue[m.channel].keys.member? nick then
-          $queue[m.channel].delete nick
-          self.showQueue(m)
+        $queue[m.channel].delete nick
+        self.showQueue(m)
       end
     end
     def setQueue(m, nicks, allowEmpty=false)
       self.checkAndCreate(m)
       if nicks.nil? or nicks.empty? then
-          if allowEmpty then
-            $queue[m.channel] = {}
-            self.showQueue(m)
-          else
-             m.action_reply "#{m.user.nick}, if you meant to query the queue, please say 'q?'; if you meant to replace the queue, please say 'queue= ..."
-          end
-      else
+        if allowEmpty then
           $queue[m.channel] = {}
-          nicks.split(', ').each do |nick|
-              $queue[m.channel][nick] = nil
-          end
           self.showQueue(m)
+        else
+          m.action_reply "#{m.user.nick}, if you meant to query the queue, please say 'q?'; if you meant to replace the queue, please say 'queue= ..."
+        end
+      else
+        $queue[m.channel] = {}
+        nicks.split(', ').each do |nick|
+          $queue[m.channel][nick] = nil
+        end
+        self.showQueue(m)
       end
     end
 
@@ -113,12 +113,12 @@ module Bot
     end
 
     def checkAndCreate(m)
-        if $queue.nil? then
-            $queue = {}
-        end
-        if $queue[m.channel].nil? then
-            $queue[m.channel] = {}
-        end
+      if $queue.nil? then
+        $queue = {}
+      end
+      if $queue[m.channel].nil? then
+        $queue[m.channel] = {}
+      end
     end
   end
 end
