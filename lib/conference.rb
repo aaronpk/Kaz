@@ -1,14 +1,14 @@
-class Conference
+class ConfHelper
 
   # Return the SID of the current conference
   # The first time, fetches from Twilio, then caches in the DB
   # Returns a Twilio conference object
-  def self.current_conference(room)
+  def self.current_conference(db, room)
     if room[:conference_sid]
       room[:conference_sid]
       conference = TwilioClient.account.conferences.get(room[:conference_sid])
       if conference.status != 'in-progress'
-        DB[:rooms].where(:id => room[:id]).update(:conference_sid => nil)
+        db[:rooms].where(:id => room[:id]).update(:conference_sid => nil)
         nil
       else
         conference
@@ -19,13 +19,23 @@ class Conference
         :Status => 'in-progress'
       )
       if conferences[0]
-        DB[:rooms].where(:id => room[:id]).update(:conference_sid => conferences[0].sid)
+        db[:rooms].where(:id => room[:id]).update(:conference_sid => conferences[0].sid)
         conferences[0]
       else
-        DB[:rooms].where(:id => room[:id]).update(:conference_sid => nil)
+        db[:rooms].where(:id => room[:id]).update(:conference_sid => nil)
         nil
       end
     end
+  end
+
+  def self.mute(db, conference, caller_sid)
+    participant = conference.participants.get(caller_sid)
+    participant.mute()
+  end
+
+  def self.unmute(db, conference, caller_sid)
+    participant = conference.participants.get(caller_sid)
+    participant.unmute()
   end
 
 end

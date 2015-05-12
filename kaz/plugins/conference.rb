@@ -83,9 +83,28 @@ module Bot
       room = room_for_channel db, m
       return unless room
 
-      m.reply "I'll check for you"
+      conference = ConfHelper.current_conference db, room
 
+      if !conference
+        return m.reply "There is no active call for this conference code"
+      end
 
+      participants = []
+      conference.participants.list.each do |p|
+        sid = p.uri.match(/Participants\/(.+)\.json/)[1]
+        caller = db[:callers].where(:room_id => room[:id], :call_sid => sid).first
+        if caller
+          string = "#{caller[:nick] ? caller[:nick] : caller[:ident]}"
+          if p.muted
+            string += " (muted)"
+          end
+          participants << string
+        else
+          participants << "#{sid} (not tracked)"
+        end
+      end
+
+      m.reply "On the call: #{participants.join(', ')}"
     end
 
     match /this is ([a-z0-9]{4})$/i, method: :set_conference_code
@@ -118,13 +137,17 @@ module Bot
       nick = caller[:nick] ? caller[:nick] : nil
       display_name = caller[:nick] ? caller[:nick] : caller[:ident]
 
-      if action == 'mute'
-        # TODO: Mute on Twilio
+      conference = ConfHelper.current_conference db, room
+      if !conference
+        return m.reply "There is no active call for this conference code"
+      end
 
+      if action == 'mute'
+        ConfHelper.mute db, conference, caller[:call_sid]
         devoice_nick m.channel.name, nick if nick
         m.reply "#{display_name} is now muted" # TODO: say if already muted
       else
-        # TODO: Unmute on Twilio
+        ConfHelper.unmute db, conference, caller[:call_sid]
         voice_nick m.channel.name, nick if nick
         m.reply "#{display_name} is unmuted"
       end

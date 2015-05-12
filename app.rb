@@ -115,8 +115,7 @@ class App < Sinatra::Base
           :method => 'POST'  
         }) do |d|
           d.Conference(code, {
-            :enterSound => 'beep:1',
-            :exitSound => 'beep:2',
+            :beep => 'true',
             :startConferenceOnEnter => 'true'
           })
         end
@@ -154,14 +153,18 @@ class App < Sinatra::Base
     room = DB[:rooms].where(:id => params[:room]).first
 
     if room
-      conference = Conference.current_conference room
+      conference = ConfHelper.current_conference DB, room
       if conference
         response = []
         conference.participants.list.each do |p|
+          sid = p.uri.match(/Participants\/(.+)\.json/)[1]
+          caller = DB[:callers].where(:room_id => room[:id], :call_sid => sid).first
           response << {
             :date_created => p.date_created,
             :muted => p.muted,
-            :uri => p.uri
+            :uri => p.uri,
+            :sid => sid,
+            :caller => caller
           }
         end
         response.to_json
