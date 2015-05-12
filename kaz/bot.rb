@@ -15,6 +15,7 @@ PLUGINS = [
 
 # Load the config file
 require File.expand_path "../lib/config", __FILE__
+require File.expand_path "../../lib/conference", __FILE__
 
 TwilioClient = Twilio::REST::Client.new CONFIG[:twilio][:sid], CONFIG[:twilio][:token]
 

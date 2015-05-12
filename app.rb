@@ -18,6 +18,7 @@ DB = Sequel.connect(CONFIG[:db])
 TwilioClient = Twilio::REST::Client.new CONFIG[:twilio][:sid], CONFIG[:twilio][:token]
 
 require File.expand_path "../lib/aliases", __FILE__
+require File.expand_path "../lib/conference", __FILE__
 
 class App < Sinatra::Base
 
@@ -147,6 +148,27 @@ class App < Sinatra::Base
 
   post '/irc' do
     REDIS.publish 'input', params.to_json
+  end
+
+  get '/call/participants' do
+    room = DB[:rooms].where(:id => params[:room]).first
+
+    if room
+      conference = Conference.current_conference room
+      if conference
+        response = []
+        conference.participants.list.each do |p|
+          response << {
+            :date_created => p.date_created,
+            :muted => p.muted,
+            :uri => p.uri
+          }
+        end
+        response.to_json
+      else
+        'no call in progress'
+      end
+    end
   end
 
   post '/call/incoming' do

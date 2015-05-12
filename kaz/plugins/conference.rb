@@ -84,11 +84,18 @@ module Bot
       return unless room
 
       m.reply "I'll check for you"
-      conferences = TwilioClient.account.conferences.list(
-        :FriendlyName => room[:dial_code],
-        :Status => 'in-progress'
-      )
-      puts conferences.inspect
+
+
+    end
+
+    match /this is ([a-z0-9]{4})$/i, method: :set_conference_code
+    def set_conference_code(m, code)
+      db = db_connect
+
+      room = room_for_channel db, m
+      return unless room
+
+
     end
 
     match /(mute|unmute) ([^ ]+)$/, method: :mute
@@ -113,6 +120,7 @@ module Bot
 
       if action == 'mute'
         # TODO: Mute on Twilio
+
         devoice_nick m.channel.name, nick if nick
         m.reply "#{display_name} is now muted" # TODO: say if already muted
       else
