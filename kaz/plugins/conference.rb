@@ -70,7 +70,7 @@ module Bot
     def what_is_the_code(m)
       db = db_connect
 
-      room = room_for_channel db, m
+      room = ConfHelper.room_for_channel db, m
       return unless room
 
       m.reply "#{room[:dial_code]}"
@@ -80,13 +80,15 @@ module Bot
     def who_is_here(m)
       db = db_connect
 
-      room = room_for_channel db, m
+      room = ConfHelper.room_for_channel db, m
       return unless room
 
       conference = ConfHelper.current_conference db, room
 
       if !conference
         return m.reply "There is no active call for this conference code"
+      elsif conference.class == SocketError
+        return m.reply "Something went wrong trying to reach the phone system"
       end
 
       participants = []
@@ -111,7 +113,7 @@ module Bot
     def set_conference_code(m, code)
       db = db_connect
 
-      room = room_for_channel db, m
+      room = ConfHelper.room_for_channel db, m
       return unless room
 
 
@@ -121,7 +123,7 @@ module Bot
     def mute(m, action, name)
       db = db_connect
 
-      room = room_for_channel db, m
+      room = ConfHelper.room_for_channel db, m
       return unless room
 
       # Allow users to mute themselves with "mute me"
@@ -129,7 +131,7 @@ module Bot
         name = m.user.nick
       end
 
-      caller = caller_for_name db, room[:id], name
+      caller = ConfHelper.caller_for_name db, room[:id], name
       if !caller
         return m.reply "Sorry, I don't see #{name} on the call"
       end
@@ -140,57 +142,20 @@ module Bot
       conference = ConfHelper.current_conference db, room
       if !conference
         return m.reply "There is no active call for this conference code"
+      elsif conference.class == SocketError
+        return m.reply "Something went wrong trying to reach the phone system"
       end
 
       if action == 'mute'
-        ConfHelper.mute db, conference, caller[:call_sid]
-        devoice_nick m.channel.name, nick if nick
-        m.reply "#{display_name} is now muted" # TODO: say if already muted
+        result = ConfHelper.mute db, conference, caller[:call_sid]
+        Bot.Channel(m.channel.name).devoice(nick) if nick
+        m.reply "#{display_name} should now be muted" # TODO: say if already muted
       else
         ConfHelper.unmute db, conference, caller[:call_sid]
-        voice_nick m.channel.name, nick if nick
-        m.reply "#{display_name} is unmuted"
+        Bot.Channel(m.channel.name).voice(nick) if nick
+        m.reply "#{display_name} should now be unmuted"
       end
 
-    end
-
-    ##private
-
-    # Retrieve a caller record given a name, either a nick or phone ident
-    def caller_for_name(db, room_id, name)
-      caller = db[:callers]
-        .where(:room_id => room_id)
-        .where(:ident => name)
-        .first
-      return caller if caller
-
-      caller = db[:callers]
-        .where(:room_id => room_id)
-        .where(:nick => name)
-        .first
-      return caller if caller
-
-      return nil
-    end
-
-    # Retrieve the room record given a channel name
-    def room_for_channel(db, m)
-      room = db[:rooms]
-        .where(:ircserver_id => CONFIG[:irc][:server_id])
-        .where(:irc_channel => m.channel.name)
-        .first
-      if !room
-        m.reply "Sorry, I don't see a conference code configured for this IRC channel"
-      end
-      room
-    end
-
-    def voice_nick(channel, nick)
-      Bot.Channel(channel).voice(nick)
-    end
-
-    def devoice_nick(channel, nick)
-      Bot.Channel(channel).devoice(nick)
     end
 
   end

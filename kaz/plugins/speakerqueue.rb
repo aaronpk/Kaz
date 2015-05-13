@@ -77,7 +77,7 @@ module Bot
         show_queue(m)
       end
     end
-    
+
     def set_queue(m, nicks, allowEmpty=false)
       create_queue_storage(m)
       if nicks.nil? or nicks.empty? then
@@ -99,6 +99,24 @@ module Bot
     def ack_speaker(m, nick)
       create_queue_storage(m)
       if $queue[m.channel].keys.member? nick then
+
+        db = db_connect
+
+        # If there is a caller for this nick, unmute them
+        room = ConfHelper.room_for_channel db, m
+        if room
+          caller = ConfHelper.caller_for_name db, room[:id], nick
+          if caller
+            conference = ConfHelper.current_conference db, room
+            if conference and conference.class != SocketError
+              ConfHelper.unmute db, conference, caller[:call_sid]
+              Bot.Channel(m.channel.name).voice(nick) if nick
+              m.reply "#{display_name} should now be unmuted"
+            end
+          end
+        end
+
+        # Remove from queue and respond in the channel
         if $queue[m.channel][nick].nil? or $queue[m.channel][nick].empty? then
           $queue[m.channel].delete nick
           show_queue(m)
