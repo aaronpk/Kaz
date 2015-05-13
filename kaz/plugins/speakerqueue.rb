@@ -7,47 +7,47 @@ module Bot
 
     def listen(m)
       m.message.match /^(who( is|'s|s) on (the )?)?q(ueue)?\?$/i do
-        self.showQueue(m)
+        show_queue(m)
       end
 
       m.message.match /^q(ueue)?\+( (?<nick>[^ ]+))?( to (?<topic>.*))?$/i do |result|
-        self.addQueue(m, result['nick'], result['topic'])
+        add_to_queue(m, result['nick'], result['topic'])
       end
       m.message.match /^sees ((?<nick>[^ ]+)) raise hand$/i do |result|
-        self.addQueue(m, result['nick'], nil)
+        add_to_queue(m, result['nick'], nil)
       end
       m.message.match /^((?<nick>[^ ]+)) raises hand$/i do |result|
-        self.addQueue(m, result['nick'], nil)
+        add_to_queue(m, result['nick'], nil)
       end
 
       m.message.match /^q(ueue)?-( (?<nick>[^ ]+))?$/i do |result|
-        self.remQueue(m, result['nick'])
+        remove_from_queue(m, result['nick'])
       end
       m.message.match /^sees ((?<nick>[^ ]+)) lower hand$/i do |result|
-        self.remQueue(m, result['nick'])
+        remove_from_queue(m, result['nick'])
       end
       m.message.match /^((?<nick>[^ ]+)) lowers hand$/i do |result|
-        self.remQueue(m, result['nick'])
+        remove_from_queue(m, result['nick'])
       end
 
       m.message.match /^acks? (?<nick>[^ ]+)$/i do |result|
-        self.ackSpeaker(m, result['nick'])
+        ack_speaker(m, result['nick'])
       end
       m.message.match /^recognizes? (?<nick>[^ ]+)$/i do |result|
-        self.ackSpeaker(m, result['nick'])
+        ack_speaker(m, result['nick'])
       end
 
       m.message.match /^q=( ?(?<nicks>[^ ]+(, [^ ]+)*))?$/i do |result|
-        self.setQueue(m, result['nicks'])
+        set_queue(m, result['nicks'])
       end
       m.message.match /^queue=( ?(?<nicks>[^ ]+(, [^ ]+)*))?$/i do |result|
-        self.setQueue(m, result['nicks'], true)
+        set_queue(m, result['nicks'], true)
       end
 
     end
 
-    def showQueue(m)
-      self.checkAndCreate(m)
+    def show_queue(m)
+      create_queue_storage(m)
       if $queue[m.channel].empty? then
         nicklist = 'no one'
       else 
@@ -56,33 +56,34 @@ module Bot
       m.action_reply "sees #{nicklist} on the speaker queue"
     end
 
-    def addQueue(m, nick, topic)
-      self.checkAndCreate(m)
+    def add_to_queue(m, nick, topic)
+      create_queue_storage(m)
       nick = m.user.nick if nick.nil? or nick.empty?
       nick = m.user.nick if nick == 'me'
       if $queue[m.channel].keys.member? nick then
         m.action_reply "already sees #{nick} on the speaker queue"
       else 
         $queue[m.channel][nick] = topic
-        self.showQueue(m)
+        show_queue(m)
       end
     end
 
-    def remQueue(m, nick)
-      self.checkAndCreate(m)
+    def remove_from_queue(m, nick)
+      create_queue_storage(m)
       nick = m.user.nick if nick.nil? or nick.empty?
       nick = m.user.nick if nick == 'me'
       if $queue[m.channel].keys.member? nick then
         $queue[m.channel].delete nick
-        self.showQueue(m)
+        show_queue(m)
       end
     end
-    def setQueue(m, nicks, allowEmpty=false)
-      self.checkAndCreate(m)
+    
+    def set_queue(m, nicks, allowEmpty=false)
+      create_queue_storage(m)
       if nicks.nil? or nicks.empty? then
         if allowEmpty then
           $queue[m.channel] = {}
-          self.showQueue(m)
+          show_queue(m)
         else
           m.action_reply "#{m.user.nick}, if you meant to query the queue, please say 'q?'; if you meant to replace the queue, please say 'queue= ..."
         end
@@ -91,20 +92,20 @@ module Bot
         nicks.split(', ').each do |nick|
           $queue[m.channel][nick] = nil
         end
-        self.showQueue(m)
+        show_queue(m)
       end
     end
 
-    def ackSpeaker(m, nick)
-      self.checkAndCreate(m)
+    def ack_speaker(m, nick)
+      create_queue_storage(m)
       if $queue[m.channel].keys.member? nick then
         if $queue[m.channel][nick].nil? or $queue[m.channel][nick].empty? then
           $queue[m.channel].delete nick
-          self.showQueue(m)
+          show_queue(m)
         else 
           topic = $queue[m.channel].delete nick
           if topic.empty? then
-            self.showQueue(m)
+            show_queue(m)
           else
             m.reply "#{nick}, you wanted to #{topic}"
           end
@@ -112,7 +113,7 @@ module Bot
       end
     end
 
-    def checkAndCreate(m)
+    def create_queue_storage(m)
       if $queue.nil? then
         $queue = {}
       end
