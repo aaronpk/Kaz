@@ -28,6 +28,7 @@ module Bot
         # First remove the nick from any other records in this room
         db[:callers]
           .where(:room_id => caller[:room_id])
+          .where(:nick => nick)
           .update(:nick => nil, :date_nick_set => nil)
 
         # Add the nick to the current caller
